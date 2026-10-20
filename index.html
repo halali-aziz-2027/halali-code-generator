@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>مولد أكواد حلالي</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100dvh;background:#0b0a06;color:#fff;font-family:Tahoma,Arial,sans-serif;display:grid;place-items:center;padding:18px}.panel{width:min(100%,615px);background:#17140b;border:1px solid #80651c;border-radius:20px;padding:30px}h1{color:#f1c644;text-align:center;font-size:26px;margin:28px 0 34px}label{display:block;margin:20px 0 13px;font-size:17px;text-align:right}input{width:100%;height:64px;background:#0c0b07;color:#fff;border:1px solid #8c7029;border-radius:11px;font:19px Tahoma,Arial,sans-serif;padding:12px;direction:ltr;text-align:left}input:focus{outline:2px solid #f1c644}button{display:block;width:100%;border:0;border-radius:11px;background:#e6b82d;color:#201900;font:bold 20px Tahoma,Arial,sans-serif;min-height:65px;margin-top:15px;cursor:pointer}button:disabled{opacity:.6;cursor:wait}#status{min-height:25px;text-align:center;margin-top:12px;font-size:14px}#status.error{color:#ff9999}#status.success{color:#a4e8a4}#meta{text-align:center;color:#e7d28d;font-size:14px;min-height:20px;margin-top:8px}.note{font-size:12px;color:#aa9e7e;text-align:center;margin-top:24px;line-height:1.8}@media(max-width:600px){.panel{padding:20px}h1{font-size:22px}}
+</style>
+</head>
+<body><main class="panel">
+<h1>🐑 مولد أكواد حلالي</h1>
+<label for="secret">الرقم السري</label><input id="secret" type="password" autocomplete="off" spellcheck="false">
+<label for="device">رقم الجهاز</label><input id="device" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false">
+<button id="issue" type="button">توليد الكود</button>
+<label for="code">كود التفعيل</label><input id="code" type="text" readonly autocomplete="off">
+<button id="copy" type="button">نسخ كود التفعيل</button>
+<div id="status" role="status" aria-live="polite"></div><div id="meta"></div>
+<div class="note">الصق النص كاملًا حتى لو معه كلام أو أسطر؛ سيُستخرج رقم الجهاز تلقائيًا.</div><div class="note">خاص بإدارة حلالي • يتطلب اتصالًا بالإنترنت لإصدار الأكواد</div>
+</main>
+<script>
+'use strict';
+const API='https://oozwsrkjdtieaqutvtel.supabase.co/functions/v1/halali-activation';
+const $=id=>document.getElementById(id);
+const status=$('status');
+const DEVICE_KEY='halali-generator-last-device';
+function extractActivationCode(value){
+ const clean=String(value||'').normalize('NFKC').replace(/[\u200e\u200f\u202a-\u202e]/g,'').replace(/[‐‑‒–—−]/g,'-').toUpperCase();
+ const match=clean.match(/HL-[A-Z0-9]{5}(?:-[A-Z0-9]{5}){2}-[A-Z0-9]{5}/);
+ return match?match[0]:'';
+}
+function extractDevice(value){
+ const clean=String(value||'').normalize('NFKC').replace(/[\u200e\u200f\u202a-\u202e]/g,'').replace(/[‐‑‒–—−]/g,'-').toUpperCase();
+ // Current device identifiers have four groups of five letters/digits.
+ const modern=clean.match(/HL\s*-\s*[A-Z0-9]{5}(?:\s*-\s*[A-Z0-9]{5}){3}/);
+ if(modern)return modern[0].replace(/\s/g,'');
+ // Older versions use a continuous hexadecimal device identifier.
+ const legacy=clean.match(/HL\s*-\s*[A-F0-9]{16,64}(?![A-Z0-9])/);
+ return legacy?legacy[0].replace(/\s/g,''):'';
+}
+function validDevice(id){
+ return /^HL-[A-Z0-9]{5}(?:-[A-Z0-9]{5}){3}$/.test(id)||/^HL-[A-F0-9]{16,64}$/.test(id);
+}
+
+try { const saved=localStorage.getItem(DEVICE_KEY); if(saved) $('device').value=extractDevice(saved)||''; } catch(e) {}
+$('device').addEventListener('input',()=>{
+ const raw=$('device').value;
+ const id=extractDevice(raw);
+ if(id && (raw.includes('\n')||raw.length>id.length))$('device').value=id;
+ try{if(id)localStorage.setItem(DEVICE_KEY,id)}catch(e){}
+});
+function report(msg,kind=''){status.textContent=msg;status.className=kind;}
+$('issue').addEventListener('click',async()=>{
+ const secret=$('secret').value.trim();
+ const rawDevice=$('device').value.trim();
+ const device=extractDevice(rawDevice);
+ if(device!==rawDevice){$('device').value=device;}
+ try{localStorage.setItem(DEVICE_KEY,device)}catch(e){}
+ $('code').value='';$('meta').textContent='';
+ if(!secret||!rawDevice){report('أدخل الرقم السري ورقم الجهاز','error');return;}
+ if(!validDevice(device)){report('رقم الجهاز غير صحيح. الصق الرقم الذي يبدأ بـ HL- فقط.','error');return;}
+ $('issue').disabled=true;report('جاري إصدار الكود...');
+ try{
+  const res=await fetch(API,{method:'POST',cache:'no-store',headers:{'Content-Type':'application/json','x-admin-secret':secret},body:JSON.stringify({action:'issue',device_id:device})});
+  const data=await res.json();
+  if(!res.ok||typeof data.code!=='string')throw new Error(res.status===401?'الرقم السري غير صحيح':(data.error||'تعذر إصدار الكود'));
+  const activationCode=extractActivationCode(data.code);
+  if(!activationCode)throw new Error('كود التفعيل المستلم غير صحيح');
+  $('code').value=activationCode;
+  $('meta').textContent='المدة: '+(data.days??365)+' يوم'+(data.expires_at_sa?' — ينتهي: '+data.expires_at_sa:'');
+  report('تم إصدار الكود بنجاح','success');
+ }catch(err){report(err instanceof TypeError?'تعذر الاتصال بالسيرفر':(err.message||'حدث خطأ'),'error');}
+ finally{$('secret').value='';$('issue').disabled=false;try{if(!$('device').value)$('device').value=localStorage.getItem(DEVICE_KEY)||device}catch(e){$('device').value=device}}
+});
+$('copy').addEventListener('click',async()=>{
+ const code=extractActivationCode($('code').value);if(!code){report('ولّد الكود أولًا','error');return;}
+ $('code').value=code;
+ try{await navigator.clipboard.writeText(code);report('تم نسخ كود التفعيل','success');}
+ catch(err){try{const t=document.createElement('textarea');t.value=code;document.body.appendChild(t);t.select();document.execCommand('copy');t.remove();report('تم نسخ كود التفعيل فقط','success');}catch(e){report('تعذر النسخ، انسخ الكود من الخانة','error');}}
+});
+</script></body></html>
